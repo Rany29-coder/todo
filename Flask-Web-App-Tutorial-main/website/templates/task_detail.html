@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>{{ task.title }}</h2>
+<p>Description: {{ task.description }}</p>
+
+<!-- Recursive macro to render tasks and their subtasks -->
+{% macro render_task(task) %}
+    <div class="task" id="task-{{ task.id }}" droppable="true">
+        <h3>{{ task.title }}</h3>
+        
+        <!-- Add Subtask Form -->
+        <form action="{{ url_for('views.add_subtask', task_id=task.id) }}" method="post">
+            <input type="text" name="subtask_title" placeholder="Subtask title" required>
+            <input type="submit" value="Add Subtask">
+        </form>
+
+        <!-- Display this task's subtasks recursively -->
+        {% if task.subtasks %}
+            <ul>
+                {% for subtask in task.subtasks %}
+                    <li class="draggable" draggable="true" id="subtask-{{ subtask.id }}">
+                        {{ render_task(subtask) }}
+
+                        <!-- Links to edit -->
+                        <a href="{{ url_for('views.edit_subtask', subtask_id=subtask.id) }}">Edit</a>
+                        
+                        <!-- Delete subtask form -->
+                        <form action="{{ url_for('views.delete_subtask', subtask_id=subtask.id) }}" method="post" style="display:inline;">
+                            {% if form %} {{ form.csrf_token }} {% endif %} <!-- Include CSRF token if you're using Flask-WTF -->
+                            <input type="submit" value="Delete" onclick="return confirm('Are you sure you want to delete this subtask?');">
+                        </form>
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    </div>
+{% endmacro %}
+
+<!-- Render the main task and its subtasks using the macro -->
+{{ render_task(task) }}
+
+<!-- Links to edit and delete the main task -->
+<button type="button" class="btn btn-primary" data-toggle="modal" data-target="#addTaskModal">
+    Add Task
+</button>
+
+<div class="modal fade" id="addTaskModal">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h4 class="modal-title">Add Task</h4>
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Modified this line to use add_subtask and pass the current task ID -->
+                <form action="{{ url_for('views.add_subtask', task_id=task.id) }}" method="post" id="addTaskForm">
+                    <!-- Include CSRF token if you're using Flask-WTF -->
+                    {% if form %} {{ form.csrf_token }} {% endif %}
+                    
+                    <!-- Include your task input fields here -->
+                    <div class="form-group">
+                        <label for="taskTitle">Title:</label>
+                        <input type="text" class="form-control" id="taskTitle" name="subtask_title" required>
+                    </div>
+                    <!-- Add more input fields as needed -->
+                    <button type="submit" class="btn btn-primary">Add</button>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-danger" data-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+  
+<a href="{{ url_for('views.edit_task', task_id=task.id) }}">Edit Task</a>
+<a href="{{ url_for('views.delete_task', task_id=task.id) }}" 
+   onclick="return confirm('Are you sure you want to delete this task? All subtasks will also be deleted.');">
+   Delete Task</a>
+
+<!-- Navigation back to project details -->
+{% if task.column %}
+<a href="{{ url_for('views.project_detail', project_id=task.column.project_id) }}">Back to Project</a>
+{% endif %}
+
+<script>
+    let draggedItem = null;
+
+    // Add event listeners to all draggable items
+    document.querySelectorAll('.draggable').forEach(item => {
+        item.addEventListener('dragstart', e => {
+            draggedItem = e.target;
+        });
+
+        item.addEventListener('dragend', e => {
+            setTimeout(() => {
+                draggedItem = null;
+            }, 0);
+        });
+    });
+
+    // Add event listeners to droppable areas
+    document.querySelectorAll('.task').forEach(task => {
+        task.addEventListener('dragover', e => {
+            e.preventDefault();
+        });
+
+        task.addEventListener('dragenter', e => {
+            e.preventDefault();
+        });
+
+        task.addEventListener('drop', e => {
+            console.log('Item dropped');
+            if (draggedItem) {
+                task.querySelector('ul').appendChild(draggedItem);
+    
+                // Send a request to the backend to update the task's parent
+                const subtaskId = draggedItem.id.split('-')[1];
+                const newParentId = task.id.split('-')[1];
+            
+                fetch('/move-subtask', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `subtask_id=${subtaskId}&new_parent_id=${newParentId}`,
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        console.log('Subtask moved successfully');
+                    } else {
+                        console.error('Error:', data.message);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+            }
+        });
+    });
+</script>
+
+{% endblock %}
